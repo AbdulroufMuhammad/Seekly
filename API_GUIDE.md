@@ -1,4 +1,4 @@
-# OSS Search RXNG — Developer Guide
+# Seekly — Developer Guide
 
 Internal API for structured web search, page extraction, and LLM-synthesized
 answers. This guide is for the ~16 devs integrating it into their own apps.

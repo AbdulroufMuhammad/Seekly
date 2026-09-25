@@ -1,4 +1,4 @@
-# OSS Search RXNG dashboard
+# Seekly dashboard
 
 A static, no-build-step frontend for self-service signup, login, and API
 key management. It talks directly to the `/v1/auth` and `/v1/keys`
@@ -56,6 +56,5 @@ this dashboard to be usable as intended.
 ## Not yet built
 
 This is a first pass focused on the key-management loop. Natural next
-additions: password reset, per-key usage/request charts (the API doesn't
-expose usage metrics yet either), and editing a key's rate limit from the
-UI (currently fixed at `DEFAULT_RATE_LIMIT_PER_MINUTE` for all new keys).
+additions: password reset, and per-key usage/request charts (the API
+doesn't expose usage metrics yet either).

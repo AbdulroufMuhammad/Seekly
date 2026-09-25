@@ -1,10 +1,10 @@
 .. SPDX-License-Identifier: AGPL-3.0-or-later
 
 ====================
-OSS Search RXNG
+Seekly
 ====================
 
-OSS Search RXNG is an open-source structured web search API.
+Seekly is an internal structured web search API.
 
 This project exposes a FastAPI-based API that wraps upstream SearXNG search
 results, normalizes them, and enriches them with deterministic ranking metadata
@@ -16,16 +16,13 @@ spirit to Tavily and other structured search APIs. Each result carries a stable
 URL, title, snippet, publication date, and ranking scores instead of leaving
 clients to scrape raw HTML or re-derive relevance heuristics.
 
-The legacy SearXNG branding has been replaced here with the OSS Search RXNG
-identity for this implementation.
-
 **Integrating an app against this API?** See ``API_GUIDE.md`` — auth,
 endpoints, rate limits, error handling, and copy-paste code samples.
 
 Overview
 ========
 
-OSS Search RXNG provides:
+Seekly provides:
 
 - normalized web search results
 - deterministic ranking (relevance, authority, freshness, content quality)
@@ -305,10 +302,10 @@ Valkey to point ``VALKEY_URL`` at instead of the in-process fallback.
 Project notes
 =============
 
-- This implementation is designed around a FastAPI API layer and an upstream
-  SearXNG-compatible search service.
-- The project is not the original upstream SearXNG website; it is the OSS Search
-  RXNG API implementation and metadata pipeline.
+- Seekly is a FastAPI API layer in front of an upstream SearXNG-compatible
+  search service — it is not the SearXNG project itself, and doesn't carry
+  SearXNG's own web UI or branding; SearXNG is an implementation detail of
+  where raw results come from.
 - The search results are transformed into a consistent, machine-usable schema for
   downstream applications and integrations.
 - Tables are created automatically at startup (``Base.metadata.create_all``);

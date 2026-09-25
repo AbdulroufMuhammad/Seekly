@@ -1,4 +1,4 @@
-app = "oss-search-engine"
+app = "seekly"
 primary_region = "iad"
 
 [build]
