@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from api.db_models import ApiKey
+from api.deps import get_api_key
 from api.extraction import FetchError, InvalidUrlError, NoContentError
 from api.extraction import extract as extract_document
 from api.models.document import Document
@@ -8,7 +10,13 @@ router = APIRouter()
 
 
 @router.get("/v1/extract", response_model=Document)
-async def extract(request: Request, url: str, query: str | None = None, max_passages: int | None = None):
+async def extract(
+    request: Request,
+    url: str,
+    query: str | None = None,
+    max_passages: int | None = None,
+    api_key: ApiKey = Depends(get_api_key),
+):
     if not url.strip():
         raise HTTPException(status_code=400, detail="url must not be empty")
 

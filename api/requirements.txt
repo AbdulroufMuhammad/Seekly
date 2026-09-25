@@ -1,2 +1,8 @@
 fastapi
+uvicorn
 trafilatura
+sqlalchemy[asyncio]>=2.0
+aiosqlite
+bcrypt
+pyjwt
+email-validator
