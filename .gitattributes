@@ -1,0 +1,18 @@
+*.sh text eol=lf
+container/Caddyfile text eol=lf
+api/**/*.py text eol=lf
+shared/**/*.py text eol=lf
+api_tests/**/*.py text eol=lf
+
+*.gif -diff
+*.png -diff
+*.min.css -diff
+*.min.js -diff
+*.css.map -diff
+*.js.map -diff
+*.eot -diff
+*.svg -diff
+*.ttf -diff
+*.woff -diff
+*.woff2 -diff
+messages.mo -diff
