@@ -19,6 +19,9 @@ clients to scrape raw HTML or re-derive relevance heuristics.
 The legacy SearXNG branding has been replaced here with the OSS Search RXNG
 identity for this implementation.
 
+**Integrating an app against this API?** See ``API_GUIDE.md`` — auth,
+endpoints, rate limits, error handling, and copy-paste code samples.
+
 Overview
 ========
 
