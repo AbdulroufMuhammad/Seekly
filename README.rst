@@ -109,6 +109,7 @@ The service currently exposes these endpoints:
 - ``GET /v1/health`` (public, no auth)
 - ``GET /v1/search`` (requires an API key)
 - ``GET /v1/extract`` (requires an API key)
+- ``POST /v1/extract/batch`` (requires an API key)
 
 Search endpoint
 ---------------
@@ -126,6 +127,21 @@ Request parameters:
   from SearXNG's infobox/instant-answer. Requires ``DEEPSEEK_API_KEY`` to be
   set; silently falls back to no answer if DeepSeek is unreachable or unset,
   so search itself never fails because of it.
+- ``include_domains`` / ``exclude_domains``: optional comma-delimited domain
+  lists (e.g. ``python.org,docs.python.org``). Matches the domain or any
+  subdomain of it. Applied as a post-filter on whatever SearXNG returned —
+  not a request to SearXNG itself — so a narrow ``include_domains`` can
+  yield fewer than ``max_results`` if few/none of the returned results
+  matched.
+- ``time_range``: optional, one of ``day`` / ``week`` / ``month`` / ``year``.
+  Passed straight through to SearXNG's native time-range filter.
+- ``topic``: optional, one of ``general`` (default) / ``news``. ``news`` is
+  shorthand for making sure the ``news`` category is included — merged with,
+  not overriding, an explicit ``categories`` param.
+- ``include_images``: boolean, default ``false`` — when true, also runs an
+  images-category query and returns up to 10 results in the ``images``
+  field. Failures here degrade to an empty list rather than failing the
+  whole search.
 
 The ``expand`` flag performs a multi-query fan-out using the original query plus
 ``<query> news`` and ``<query> latest`` and then merges and re-ranks the results.
@@ -152,8 +168,19 @@ Response model:
          "final_score": 0.89
        }
      ],
+     "images": [
+       {
+         "title": "Example image title",
+         "url": "https://example.com/page-the-image-is-on",
+         "image_url": "https://example.com/image.jpg",
+         "thumbnail_url": "https://example.com/image-thumb.jpg"
+       }
+     ],
      "response_time": 0.233
    }
+
+``images`` is only populated when ``include_images=true`` was passed;
+otherwise it's an empty list.
 
 The full normalized result shape is:
 
@@ -219,6 +246,35 @@ Document extraction
 Extracts document content and metadata for a given URL, optionally using a query
 for keyword-aware, relevance-ranked passage extraction.
 
+Batch extraction
+----------------
+
+``POST /v1/extract/batch`` (requires an API key)
+
+.. code-block:: json
+
+   {
+     "urls": ["https://a.example.com", "https://b.example.com"],
+     "query": "optional, applied to every URL",
+     "max_passages": null
+   }
+
+Extracts up to ``MAX_BATCH_EXTRACT_URLS`` (default ``20``) URLs concurrently
+in one call. Response:
+
+.. code-block:: json
+
+   {
+     "results": [
+       {"url": "https://a.example.com", "document": { "...": "Document, same shape as GET /v1/extract" }, "error": null},
+       {"url": "https://b.example.com", "document": null, "error": "no extractable article content found on this page"}
+     ]
+   }
+
+Results come back in the same order as the request's ``urls``. One URL
+failing (unreachable, no content, etc.) never fails the batch — it just
+gets a non-null ``error`` on that entry.
+
 Health check
 ------------
 
@@ -239,6 +295,20 @@ A static, no-build-step frontend lives in ``dashboard/`` for self-service
 signup, login, and API key management (create/list/revoke). It talks
 directly to the ``/v1/auth`` and ``/v1/keys`` endpoints above — see
 ``dashboard/README.md`` for how to serve it.
+
+Client SDKs
+===========
+
+Thin clients over the raw HTTP API, for devs who'd rather not hand-roll the
+request/response/error handling themselves:
+
+- ``sdk/python/`` — ``pip install -e sdk/python``, see ``sdk/python/README.md``
+- ``sdk/js/`` — Node 18+ or a browser, zero dependencies, see ``sdk/js/README.md``
+
+Both cover ``search`` (including the filter params above), ``extract``,
+``extract_batch``/``extractBatch``, and typed errors for ``401``/``429``/
+other non-2xx responses. Raw HTTP + ``API_GUIDE.md`` remains the source of
+truth for anything an SDK doesn't wrap yet.
 
 Configuration
 =============
@@ -261,6 +331,8 @@ Configuration
 - ``CORS_ALLOWED_ORIGINS``: comma-separated origins allowed to call
   ``/v1/auth/*`` and ``/v1/keys*`` from a browser (default ``*``)
 - ``CACHE_TTL_SECONDS``: search response cache TTL (default ``300``)
+- ``MAX_BATCH_EXTRACT_URLS``: cap on URLs per ``POST /v1/extract/batch`` call
+  (default ``20``)
 - ``DEEPSEEK_API_KEY`` / ``DEEPSEEK_BASE_URL`` / ``DEEPSEEK_MODEL`` /
   ``DEEPSEEK_TIMEOUT_SECONDS``: DeepSeek settings for ``include_answer``
 

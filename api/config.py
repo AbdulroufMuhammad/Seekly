@@ -37,6 +37,10 @@ CORS_ALLOWED_ORIGINS = [
     o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "*").split(",") if o.strip()
 ]
 
+# Cap on how many URLs POST /v1/extract/batch will accept in one call -
+# keeps a single request's fan-out (and its response size) bounded.
+MAX_BATCH_EXTRACT_URLS = int(os.environ.get("MAX_BATCH_EXTRACT_URLS", "20"))
+
 # DeepSeek is used for LLM-synthesized search answers (`include_answer=true`).
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")

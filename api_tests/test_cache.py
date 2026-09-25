@@ -57,6 +57,33 @@ async def test_cache_include_answer_true_and_false_do_not_collide():
 
 
 @pytest.mark.asyncio
+async def test_cache_include_domains_do_not_collide():
+    resp = _response("domain filtered query")
+    await cache.set("domain filtered query", 10, resp, include_domains=["python.org"])
+    assert await cache.get("domain filtered query", 10, include_domains=["other.org"]) is None
+    assert (
+        await cache.get("domain filtered query", 10, include_domains=["python.org"])
+    ).query == resp.query
+
+
+def test_cache_key_ignores_domain_list_order():
+    key_a = cache._key("q", 10, None, False, False, include_domains=["a.com", "b.com"])
+    key_b = cache._key("q", 10, None, False, False, include_domains=["b.com", "a.com"])
+    assert key_a == key_b
+
+
+@pytest.mark.asyncio
+async def test_cache_time_range_and_topic_do_not_collide():
+    resp = _response("timely query")
+    await cache.set("timely query", 10, resp, time_range="week", topic="news")
+    assert await cache.get("timely query", 10, time_range="month", topic="news") is None
+    assert await cache.get("timely query", 10, time_range="week", topic="general") is None
+    assert (
+        await cache.get("timely query", 10, time_range="week", topic="news")
+    ).query == resp.query
+
+
+@pytest.mark.asyncio
 async def test_cache_expired_entry_returns_none(monkeypatch):
     resp = _response("ttl query")
     await cache.set("ttl query", 10, resp)

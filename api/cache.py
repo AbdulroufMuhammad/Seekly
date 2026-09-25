@@ -22,10 +22,24 @@ _CACHE_KEY_PREFIX = "searchcache:"
 _store: dict[str, tuple[float, SearchResponse]] = {}
 
 
-def _key(query: str, max_results: int, categories: str | None, expand: bool, include_answer: bool) -> str:
-    return hashlib.sha256(
-        f"{query}:{max_results}:{categories or ''}:{expand}:{include_answer}".encode()
-    ).hexdigest()
+def _key(
+    query: str,
+    max_results: int,
+    categories: str | None,
+    expand: bool,
+    include_answer: bool,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+    time_range: str | None = None,
+    topic: str = "general",
+    include_images: bool = False,
+) -> str:
+    parts = (
+        f"{query}:{max_results}:{categories or ''}:{expand}:{include_answer}:"
+        f"{','.join(sorted(include_domains or []))}:{','.join(sorted(exclude_domains or []))}:"
+        f"{time_range or ''}:{topic}:{include_images}"
+    )
+    return hashlib.sha256(parts.encode()).hexdigest()
 
 
 async def get(
@@ -34,8 +48,16 @@ async def get(
     categories: str | None = None,
     expand: bool = False,
     include_answer: bool = False,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+    time_range: str | None = None,
+    topic: str = "general",
+    include_images: bool = False,
 ) -> SearchResponse | None:
-    key = _key(query, max_results, categories, expand, include_answer)
+    key = _key(
+        query, max_results, categories, expand, include_answer,
+        include_domains, exclude_domains, time_range, topic, include_images,
+    )
 
     valkey_client = valkeydb.client()
     if valkey_client is not None:
@@ -62,8 +84,16 @@ async def set(
     categories: str | None = None,
     expand: bool = False,
     include_answer: bool = False,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+    time_range: str | None = None,
+    topic: str = "general",
+    include_images: bool = False,
 ) -> None:
-    key = _key(query, max_results, categories, expand, include_answer)
+    key = _key(
+        query, max_results, categories, expand, include_answer,
+        include_domains, exclude_domains, time_range, topic, include_images,
+    )
 
     valkey_client = valkeydb.client()
     if valkey_client is not None:

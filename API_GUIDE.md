@@ -4,6 +4,12 @@ Internal API for structured web search, page extraction, and LLM-synthesized
 answers. This guide is for the ~16 devs integrating it into their own apps.
 For architecture/deployment details, see `README.rst` and `DEPLOY.md`.
 
+**Using Python or JS/Node?** `sdk/python/` and `sdk/js/` wrap everything
+below (auth headers, params, typed errors) so you don't have to hand-roll
+raw HTTP calls — see their READMEs. This guide still applies either way:
+it's the contract the SDKs implement, and the only option for other
+languages.
+
 ## 1. Get an API key
 
 1. Open the dashboard (ask whoever runs it for the URL — see `dashboard/README.md`
@@ -37,7 +43,8 @@ can revoke or resize one app's access without touching another's.
 
 ## 2. Authenticate your requests
 
-Every call to `/v1/search` or `/v1/extract` needs your key in **one** of:
+Every call to `/v1/search`, `/v1/extract`, or `/v1/extract/batch` needs your
+key in **one** of:
 
 ```
 X-API-Key: sk_live_...
@@ -60,13 +67,18 @@ in your app, same as any other credential.
 GET /v1/search
 ```
 
-| Param            | Type    | Default | Notes                                                                 |
-|-------------------|---------|---------|------------------------------------------------------------------------|
-| `q`               | string  | —       | required                                                                |
-| `max_results`     | int     | 10      | 1–50                                                                    |
-| `categories`      | string  | —       | comma-delimited, upstream SearXNG categories (e.g. `news,science`)     |
-| `expand`          | bool    | false   | fan out to `<q> news` + `<q> latest`, merge & re-rank                  |
-| `include_answer`  | bool    | false   | LLM-synthesized answer over the top results (costs a DeepSeek call — see §5) |
+| Param              | Type    | Default   | Notes                                                                          |
+|---------------------|---------|-----------|----------------------------------------------------------------------------------|
+| `q`                 | string  | —         | required                                                                          |
+| `max_results`       | int     | 10        | 1–50                                                                              |
+| `categories`        | string  | —         | comma-delimited, upstream SearXNG categories (e.g. `news,science`)               |
+| `expand`            | bool    | false     | fan out to `<q> news` + `<q> latest`, merge & re-rank                            |
+| `include_answer`    | bool    | false     | LLM-synthesized answer over the top results (costs a DeepSeek call — see §5)     |
+| `include_domains`   | string  | —         | comma-delimited (e.g. `python.org,docs.python.org`); matches domain or subdomain |
+| `exclude_domains`   | string  | —         | same format, drops matches instead of keeping only them                         |
+| `time_range`        | string  | —         | one of `day` / `week` / `month` / `year`                                        |
+| `topic`             | string  | `general` | `general` or `news` — `news` ensures the news category is included              |
+| `include_images`    | bool    | false     | also returns up to 10 image results in `images` (see §6)                        |
 
 ```bash
 curl "https://<api-host>/v1/search?q=rust%20async%20runtimes&max_results=5" \
@@ -92,6 +104,7 @@ curl "https://<api-host>/v1/search?q=rust%20async%20runtimes&max_results=5" \
       "final_score": 0.89
     }
   ],
+  "images": [],
   "response_time": 0.233
 }
 ```
@@ -102,8 +115,14 @@ don't need to re-rank client-side. `final_score` is deterministic (relevance
 an LLM judgment, so it's stable and reproducible across calls.
 
 Responses are cached server-side (~5 min by default, see `X-Cache: HIT|MISS`
-response header) — identical repeated queries are cheap, so don't build your
-own caching layer on top unless you need longer TTLs.
+response header) — identical repeated queries (same params) are cheap, so
+don't build your own caching layer on top unless you need longer TTLs.
+
+`include_domains`/`exclude_domains` are applied *after* SearXNG returns
+results, not sent to it as a query filter (there's no reliable cross-engine
+way to do that) — so a narrow `include_domains` can leave you with fewer
+than `max_results` if few of the returned results matched. It's a filter on
+what came back, not a guarantee of that many matching results existing.
 
 ## 4. Extract a page
 
@@ -120,6 +139,35 @@ Returns cleaned page content/metadata. Pass `query` to get keyword-aware,
 relevance-ranked passages instead of the raw dump — useful when you only
 want the part of a long page relevant to what you're looking for.
 
+### Batch extraction
+
+```
+POST /v1/extract/batch
+```
+
+```bash
+curl -X POST "https://<api-host>/v1/extract/batch" \
+  -H "X-API-Key: sk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["https://a.example.com", "https://b.example.com"], "query": "pricing"}'
+```
+
+Up to `MAX_BATCH_EXTRACT_URLS` (default 20) URLs per call, extracted
+concurrently, `query`/`max_passages` applied to all of them. Response:
+
+```json
+{
+  "results": [
+    {"url": "https://a.example.com", "document": { "...": "same shape as GET /v1/extract" }, "error": null},
+    {"url": "https://b.example.com", "document": null, "error": "no extractable article content found on this page"}
+  ]
+}
+```
+
+Same order as the `urls` you sent. **One bad URL never fails the whole
+call** — check `error` per item, not the HTTP status, to see which ones
+actually failed.
+
 ## 5. LLM-synthesized answers (`include_answer=true`)
 
 By default `answer` is only populated when SearXNG's own upstream
@@ -135,10 +183,22 @@ This costs an extra LLM call, so:
 - Leave it `false` for anything where you only need the result list.
 - It fails soft — if DeepSeek is down or not configured server-side, you
   still get a normal search response with `answer: null`, not an error.
-- Identical `(query, include_answer=true)` calls hit the cache like any
-  other search, so repeat queries don't re-bill DeepSeek.
+- Identical repeated calls hit the cache like any other search, so repeat
+  queries don't re-bill DeepSeek.
 
-## 6. Rate limits
+## 6. Image results (`include_images=true`)
+
+```bash
+curl "https://<api-host>/v1/search?q=golden%20retriever&include_images=true" \
+  -H "X-API-Key: sk_live_..."
+```
+
+Adds up to 10 entries to the `images` array, each `{title, url, image_url,
+thumbnail_url}` — `url` is the page the image was found on, `image_url` is
+the direct image link. This runs one extra upstream query; if it fails,
+`images` just comes back empty rather than failing the search.
+
+## 7. Rate limits
 
 Each key has its own `requests/minute` limit (see it / change it from the
 dashboard, or `GET /v1/keys`). Go over it and you get:
@@ -157,22 +217,41 @@ high-traffic service), set a higher `rate_limit_per_minute` on that key's
 own row rather than working around 429s — see the dashboard's "Edit limit"
 or `PATCH /v1/keys/{id}`.
 
-## 7. Errors
+## 8. Errors
 
 | Status | Meaning                                              | What to do                                  |
 |--------|-------------------------------------------------------|-----------------------------------------------|
-| 400    | bad request (e.g. empty `q`)                          | fix the request                               |
+| 400    | bad request (empty `q`, invalid `topic`/`time_range`) | fix the request                               |
 | 401    | missing/invalid/revoked API key, or bad JWT            | check your key; re-login for JWT endpoints    |
 | 404    | key not found (on `/v1/keys/{id}` — wrong id or not yours) | check the id                               |
-| 422    | validation error (bad param shape), or extract found no content | fix input / expected for some URLs |
+| 422    | validation error (bad param shape/type, batch urls empty or over the cap), or extract found no content | fix input |
 | 429    | rate limited                                           | back off `Retry-After` seconds, retry         |
 | 502    | upstream (SearXNG) unavailable                         | transient — retry with backoff                |
 
-Error bodies are `{"detail": "..."}`.
+Error bodies are `{"detail": "..."}`. Batch extract is the one exception:
+its per-URL failures (unreachable page, no content, etc.) show up as
+`error` on that item, not as an HTTP error status.
 
-## 8. Code samples
+## 9. Code samples
 
-**Python (`requests`):**
+**Using the SDKs (recommended for Python/JS):**
+
+```python
+from seekly import SeeklyClient
+client = SeeklyClient(api_key="sk_live_...", base_url="https://<api-host>")
+resp = client.search("rust async runtimes", max_results=5)
+```
+
+```js
+import { SeeklyClient } from "seekly";
+const client = new SeeklyClient({ apiKey: "sk_live_...", baseUrl: "https://<api-host>" });
+const resp = await client.search("rust async runtimes", { maxResults: 5 });
+```
+
+See `sdk/python/README.md` / `sdk/js/README.md` for install instructions
+and full usage (batch extract, filters, error types).
+
+**Raw HTTP, Python (`requests`):**
 
 ```python
 import os
@@ -193,7 +272,7 @@ for r in data["results"]:
     print(r["final_score"], r["title"], r["url"])
 ```
 
-**Node / JS (`fetch`):**
+**Raw HTTP, Node / JS (`fetch`):**
 
 ```js
 const API_KEY = process.env.SEEKLY_API_KEY;
@@ -213,13 +292,16 @@ if (!resp.ok) {
 const data = await resp.json();
 ```
 
-## 9. Good practices
+## 10. Good practices
 
 - One key per app/environment, not one shared key for everything — makes
   revocation and quota changes safe and scoped.
 - Read the key from config/secrets, never commit it.
-- Use `include_answer=true` only where you actually show a synthesized
-  answer — it's the one param that costs an external LLM call.
+- Use `include_answer=true` and `include_images=true` only where you
+  actually use the result — they're the params that cost an extra upstream
+  call (DeepSeek, or a second SearXNG query, respectively).
+- For batch extract, check each item's `error`, not just the HTTP status —
+  a 200 can still contain per-URL failures.
 - Treat `429` as expected, not exceptional — handle it, don't alert-page on it.
 - If you're decommissioning an app, revoke its key from the dashboard
   rather than leaving it live.
