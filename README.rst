@@ -84,10 +84,20 @@ Two separate credential types are in play:
   stored server-side.
 
 Every API key carries a per-minute rate limit (``rate_limit_per_minute``,
-default configurable via ``DEFAULT_RATE_LIMIT_PER_MINUTE``). Exceeding it
-returns ``429`` with a ``Retry-After`` header. The limiter is in-process
-(matches the existing response cache); a multi-instance deployment needs a
-shared backend (e.g. Redis) instead — see ``api/ratelimit.py``.
+default ``DEFAULT_RATE_LIMIT_PER_MINUTE``, cap ``MAX_RATE_LIMIT_PER_MINUTE``).
+Exceeding it returns ``429`` with a ``Retry-After`` header of at most 60
+seconds — there's no lockout or backoff, the next 60-second window resets to
+full quota automatically. Set a key's own limit at creation
+(``POST /v1/keys`` with ``rate_limit_per_minute``) or change it later
+(``PATCH /v1/keys/{id}``) — useful when different internal apps need
+different quotas.
+
+Rate limiting (and the search response cache) is backed by Valkey/Redis when
+``VALKEY_URL`` is set, so multiple API instances share one correct view of
+each key's usage — required once you run more than one instance (see
+*Deploying on AWS* below). Without ``VALKEY_URL`` it falls back to an
+in-process counter, which is fine for local dev but gives every instance its
+own counters in production.
 
 Available API endpoints
 ======================
@@ -235,15 +245,59 @@ Configuration
 
 - ``SEARXNG_UPSTREAM``: base URL of the upstream SearXNG instance
 - ``DATABASE_URL``: SQLAlchemy async URL for users/API keys (default:
-  local SQLite file)
+  local SQLite file; use Postgres in production — e.g. AWS RDS)
+- ``VALKEY_URL``: Valkey/Redis connection for rate limiting + the search
+  cache, e.g. ``redis://host:6379/0``, or ``rediss://...`` for TLS. Unset
+  means both fall back to in-process state — fine for local dev, **not**
+  correct once you run more than one API instance. See *Deploying on AWS*.
 - ``JWT_SECRET``: signing secret for dashboard session tokens (**set this
   explicitly in production** — an unset value falls back to a random
   per-process secret, which invalidates all sessions on every restart)
 - ``JWT_EXPIRE_MINUTES``: session token lifetime (default ``60``)
-- ``DEFAULT_RATE_LIMIT_PER_MINUTE``: default per-key rate limit (default ``60``)
+- ``DEFAULT_RATE_LIMIT_PER_MINUTE`` / ``MAX_RATE_LIMIT_PER_MINUTE``: default
+  and cap for a key's per-minute rate limit (default ``300`` / ``3000`` —
+  sized for an internal tool shared by a handful of apps, not a metered
+  public API; tune to taste)
+- ``CORS_ALLOWED_ORIGINS``: comma-separated origins allowed to call
+  ``/v1/auth/*`` and ``/v1/keys*`` from a browser (default ``*``)
 - ``CACHE_TTL_SECONDS``: search response cache TTL (default ``300``)
 - ``DEEPSEEK_API_KEY`` / ``DEEPSEEK_BASE_URL`` / ``DEEPSEEK_MODEL`` /
   ``DEEPSEEK_TIMEOUT_SECONDS``: DeepSeek settings for ``include_answer``
+
+Deploying on AWS
+=================
+
+This repo also has a Fly.io-specific deployment path (``Dockerfile``,
+``container/start.sh``, ``fly.toml``, ``DEPLOY.md``) that puts Caddy in
+front of everything and gates the *entire* app — including
+``/v1/auth/signup`` and the dashboard — behind one shared ``AUTH_TOKEN``.
+That predates the auth system above and actively conflicts with it: nobody
+can reach self-service signup without already having that shared secret.
+
+**On AWS, don't carry that wrapper over.** Run the API container (built from
+the ``builder``/``dist`` stages in ``Dockerfile``, or your own image running
+``uvicorn api.app:app`` / ``granian api.app:app``) directly behind your load
+balancer, terminate TLS there, and let the app's own auth be the only gate:
+JWT sessions for the dashboard, per-key auth for ``/v1/search`` and
+``/v1/extract``. Concretely, for a multi-instance setup (e.g. ECS
+Fargate/EC2 behind an ALB):
+
+- **ElastiCache** (Redis or Valkey engine, both speak the same protocol this
+  app uses) for ``VALKEY_URL`` — this is what makes rate limiting and the
+  cache correct across instances instead of each instance tracking its own.
+  Use ``rediss://`` if you enable TLS-in-transit / in-cluster encryption.
+- **RDS Postgres** for ``DATABASE_URL``
+  (``postgresql+asyncpg://user:pass@host/db`` — add ``asyncpg`` to
+  ``api/requirements.txt``) instead of the default local SQLite file, which
+  doesn't work at all across instances.
+- A real ``JWT_SECRET`` from Secrets Manager / SSM Parameter Store, not the
+  random per-process fallback.
+- SearXNG itself (``SEARXNG_UPSTREAM``) needs to be reachable from every API
+  instance — run it as its own service (see ``container/docker-compose.yml``
+  for the reference SearXNG + Valkey pairing) rather than on localhost.
+
+For local dev, ``docker-compose.dev.yml`` at the repo root gives you a real
+Valkey to point ``VALKEY_URL`` at instead of the in-process fallback.
 
 Project notes
 =============

@@ -16,8 +16,19 @@ JWT_SECRET = os.environ.get("JWT_SECRET") or os.urandom(32).hex()
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "60"))
 
-# Default per-key rate limit (requests/minute) assigned to newly created API keys.
-DEFAULT_RATE_LIMIT_PER_MINUTE = int(os.environ.get("DEFAULT_RATE_LIMIT_PER_MINUTE", "60"))
+# Valkey/Redis connection for rate limiting + the search cache, e.g.
+# "redis://host:6379/0" locally, or an AWS ElastiCache endpoint in
+# production ("rediss://..." if TLS-in-transit is enabled). Required once
+# you run more than one API instance - see api/valkeydb.py.
+VALKEY_URL = os.environ.get("VALKEY_URL", "")
+
+# Default per-key rate limit (requests/minute) assigned to newly created API
+# keys that don't request a specific limit. This is an in-house tool shared
+# by a handful of internal apps/devs, not a metered public API, so the
+# default is generous; MAX_RATE_LIMIT_PER_MINUTE is the ceiling a key can
+# request for itself at creation time.
+DEFAULT_RATE_LIMIT_PER_MINUTE = int(os.environ.get("DEFAULT_RATE_LIMIT_PER_MINUTE", "300"))
+MAX_RATE_LIMIT_PER_MINUTE = int(os.environ.get("MAX_RATE_LIMIT_PER_MINUTE", "3000"))
 
 # Origins allowed to call the dashboard-facing endpoints (/v1/auth/*, /v1/keys*)
 # from a browser. Comma-separated, e.g. "https://app.example.com,http://localhost:8080".

@@ -5,29 +5,32 @@ import pytest
 from api import ratelimit
 
 
-def test_allows_requests_under_the_limit():
+@pytest.mark.asyncio
+async def test_allows_requests_under_the_limit():
     key_id = uuid.uuid4().hex
     for _ in range(5):
-        allowed, retry_after = ratelimit.check_and_increment(key_id, limit_per_minute=5)
+        allowed, retry_after = await ratelimit.check_and_increment(key_id, limit_per_minute=5)
         assert allowed is True
         assert retry_after == 0
 
 
-def test_blocks_requests_over_the_limit():
+@pytest.mark.asyncio
+async def test_blocks_requests_over_the_limit():
     key_id = uuid.uuid4().hex
     for _ in range(3):
-        assert ratelimit.check_and_increment(key_id, limit_per_minute=3)[0] is True
+        assert (await ratelimit.check_and_increment(key_id, limit_per_minute=3))[0] is True
 
-    allowed, retry_after = ratelimit.check_and_increment(key_id, limit_per_minute=3)
+    allowed, retry_after = await ratelimit.check_and_increment(key_id, limit_per_minute=3)
     assert allowed is False
     assert retry_after > 0
 
 
-def test_different_keys_have_independent_limits():
+@pytest.mark.asyncio
+async def test_different_keys_have_independent_limits():
     key_a, key_b = uuid.uuid4().hex, uuid.uuid4().hex
-    assert ratelimit.check_and_increment(key_a, limit_per_minute=1)[0] is True
-    assert ratelimit.check_and_increment(key_a, limit_per_minute=1)[0] is False
-    assert ratelimit.check_and_increment(key_b, limit_per_minute=1)[0] is True
+    assert (await ratelimit.check_and_increment(key_a, limit_per_minute=1))[0] is True
+    assert (await ratelimit.check_and_increment(key_a, limit_per_minute=1))[0] is False
+    assert (await ratelimit.check_and_increment(key_b, limit_per_minute=1))[0] is True
 
 
 @pytest.mark.asyncio

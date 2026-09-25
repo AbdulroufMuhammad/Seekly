@@ -25,7 +25,7 @@ async def search(
         raise HTTPException(status_code=400, detail="q must not be empty")
     max_results = max(1, min(50, max_results))
 
-    cached = cache.get(q, max_results, categories, expand, include_answer)
+    cached = await cache.get(q, max_results, categories, expand, include_answer)
     if cached is not None:
         response.headers["X-Cache"] = "HIT"
         return cached
@@ -47,6 +47,6 @@ async def search(
         if llm_answer is not None:
             result.answer = llm_answer
 
-    cache.set(q, max_results, result, categories, expand, include_answer)
+    await cache.set(q, max_results, result, categories, expand, include_answer)
     response.headers["X-Cache"] = "MISS"
     return result

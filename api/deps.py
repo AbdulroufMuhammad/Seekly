@@ -44,7 +44,7 @@ async def get_api_key(
     if api_key is None or api_key.revoked:
         raise HTTPException(status_code=401, detail="invalid or revoked API key")
 
-    allowed, retry_after = ratelimit.check_and_increment(api_key.id, api_key.rate_limit_per_minute)
+    allowed, retry_after = await ratelimit.check_and_increment(api_key.id, api_key.rate_limit_per_minute)
     if not allowed:
         raise HTTPException(
             status_code=429, detail="rate limit exceeded", headers={"Retry-After": str(retry_after)}

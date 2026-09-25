@@ -37,6 +37,12 @@ Netlify, Vercel, nginx, GitHub Pages). There's no build step: just publish
 `index.html`, `dashboard.html`, `styles.css`, `api.js`, and `config.js`
 (with `config.js` edited for your API's URL) as-is.
 
+If the API is deployed behind the repo's old Fly.io Caddy wrapper (see the
+root `DEPLOY.md`), this won't work — that wrapper requires a shared
+`AUTH_TOKEN` on every request, including signup, which defeats self-service.
+It needs to be dropped (see "Deploying on AWS" in the root `README.rst`) for
+this dashboard to be usable as intended.
+
 ## What's here
 
 - `index.html` — landing page + sign in / sign up

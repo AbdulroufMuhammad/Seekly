@@ -51,6 +51,15 @@ const Api = {
     apiRequest("/v1/auth/login", { method: "POST", body: { email, password }, auth: false }),
   me: () => apiRequest("/v1/auth/me"),
   listKeys: () => apiRequest("/v1/keys"),
-  createKey: (name) => apiRequest("/v1/keys", { method: "POST", body: { name } }),
+  createKey: (name, rateLimitPerMinute) =>
+    apiRequest("/v1/keys", {
+      method: "POST",
+      body: { name, rate_limit_per_minute: rateLimitPerMinute || null },
+    }),
+  updateKey: (id, rateLimitPerMinute) =>
+    apiRequest(`/v1/keys/${id}`, {
+      method: "PATCH",
+      body: { rate_limit_per_minute: rateLimitPerMinute },
+    }),
   revokeKey: (id) => apiRequest(`/v1/keys/${id}`, { method: "DELETE" }),
 };

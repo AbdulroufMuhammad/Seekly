@@ -4,6 +4,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api import valkeydb
 from api.config import CORS_ALLOWED_ORIGINS, SEARXNG_UPSTREAM
 from api.db import init_models
 from api.providers.searxng import SearxngProvider
@@ -13,6 +14,7 @@ from api.routes import auth, extract, health, keys, search
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_models()
+    await valkeydb.initialize()
     client = httpx.AsyncClient()
     app.state.http_client = client
     app.state.searxng_upstream = SEARXNG_UPSTREAM

@@ -53,6 +53,10 @@
           <label for="new-key-name">Name</label>
           <input id="new-key-name" type="text" placeholder="e.g. production" required />
         </div>
+        <div class="field">
+          <label for="new-key-rate-limit">Rate limit (requests/minute)</label>
+          <input id="new-key-rate-limit" type="number" min="1" placeholder="default: 300" />
+        </div>
         <div class="form-actions">
           <button class="btn btn-primary" type="submit">Create key</button>
         </div>
@@ -124,6 +128,29 @@
         `;
 
         if (!key.revoked) {
+          const actions = tr.lastElementChild;
+
+          const editBtn = document.createElement("button");
+          editBtn.className = "btn btn-ghost";
+          editBtn.textContent = "Edit limit";
+          editBtn.style.marginRight = "8px";
+          editBtn.addEventListener("click", async () => {
+            const next = prompt(`New rate limit (requests/minute) for "${key.name}":`, key.rate_limit_per_minute);
+            if (next === null) return;
+            const parsed = parseInt(next, 10);
+            if (!Number.isInteger(parsed) || parsed < 1) {
+              keysError.textContent = "Rate limit must be a positive whole number.";
+              return;
+            }
+            try {
+              await Api.updateKey(key.id, parsed);
+              await loadKeys();
+            } catch (err) {
+              keysError.textContent = err.message;
+            }
+          });
+          actions.appendChild(editBtn);
+
           const revokeBtn = document.createElement("button");
           revokeBtn.className = "btn btn-danger";
           revokeBtn.textContent = "Revoke";
@@ -136,7 +163,7 @@
               keysError.textContent = err.message;
             }
           });
-          tr.lastElementChild.appendChild(revokeBtn);
+          actions.appendChild(revokeBtn);
         }
 
         keysBody.appendChild(tr);
@@ -161,6 +188,7 @@
 
     document.getElementById("new-key-btn").addEventListener("click", () => {
       document.getElementById("new-key-name").value = "";
+      document.getElementById("new-key-rate-limit").value = "";
       newKeyError.textContent = "";
       newKeyModal.classList.remove("hidden");
     });
@@ -172,8 +200,10 @@
     newKeyForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = document.getElementById("new-key-name").value.trim();
+      const rateLimitRaw = document.getElementById("new-key-rate-limit").value.trim();
+      const rateLimit = rateLimitRaw ? parseInt(rateLimitRaw, 10) : undefined;
       try {
-        const created = await Api.createKey(name);
+        const created = await Api.createKey(name, rateLimit);
         newKeyModal.classList.add("hidden");
         revealKey.textContent = created.key;
         revealModal.classList.remove("hidden");
