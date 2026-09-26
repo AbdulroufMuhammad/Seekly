@@ -29,6 +29,8 @@ Seekly provides:
 - deterministic ranking (relevance, authority, freshness, content quality)
 - LLM-synthesized answers (DeepSeek) over the top results
 - document extraction from URLs
+- optional semantic re-ranking and a Tavily fallback for higher-stakes/
+  customer-facing search, plus multi-instance upstream failover
 - upstream health checks and service monitoring
 - self-service accounts and API keys, with per-key rate limiting
 
@@ -150,6 +152,11 @@ Request parameters:
   (same extraction ``GET /v1/extract`` uses), so callers don't need a
   second round-trip per result. A single URL's extraction failing leaves
   that result's ``raw_content`` as ``null`` rather than failing the search.
+- ``semantic_rerank``: boolean, default ``false`` — when true, a single
+  DeepSeek call re-judges the top ``SEMANTIC_RERANK_TOP_K`` results for
+  relevance and returns them in that order instead of Seekly's default
+  deterministic ranking. Fails soft to the original order on any error.
+  See *Reliability* below for why this exists.
 
 The ``expand`` flag performs a multi-query fan-out using the original query plus
 ``<query> news`` and ``<query> latest`` and then merges and re-ranks the results.
@@ -185,7 +192,8 @@ Response model:
          "thumbnail_url": "https://example.com/image-thumb.jpg"
        }
      ],
-     "response_time": 0.233
+     "response_time": 0.233,
+     "fallback_used": false
    }
 
 ``images`` is only populated when ``include_images=true`` was passed;
@@ -349,18 +357,52 @@ an in-process, timeout-bounded background task (no separate worker process
 to deploy or monitor), using `Scrapling <https://github.com/D4Vinci/Scrapling>`_
 for fetching, link discovery, and robots.txt compliance.
 
+Reliability: semantic rerank, Tavily fallback, and upstream health
+====================================================================
+
+Three things that keep ``/v1/search`` answering well even when something
+underneath it degrades:
+
+- **Semantic rerank** (``semantic_rerank=true`` on ``/v1/search``): one
+  DeepSeek call re-judges the top ``SEMANTIC_RERANK_TOP_K`` (default
+  ``10``) results for relevance and returns them in that order, instead of
+  Seekly's default deterministic ranking. Fails soft to the original order
+  on any error - see ``api/llm/rerank.py``.
+- **Tavily fallback**: if ``TAVILY_API_KEY`` is set, a query whose own
+  upstream comes back empty, or whose top result scores below
+  ``TAVILY_FALLBACK_SCORE_THRESHOLD`` (default ``0.35``), is retried
+  against Tavily before the response is returned. The response's
+  ``fallback_used`` field says whether this happened. Unset
+  ``TAVILY_API_KEY`` means it never triggers - see ``api/providers/tavily.py``.
+- **Upstream failover**: set ``UPSTREAM_SEARCH_FALLBACK_URLS`` to run more
+  than one upstream instance; a connect/timeout/5xx failure against one is
+  retried against the next automatically, inside the same request. An
+  instance that fails ``UPSTREAM_FAILURE_THRESHOLD`` times in a row is
+  deprioritized (tried last) for ``UPSTREAM_COOLDOWN_SECONDS`` rather than
+  retried on every request - a simple in-process circuit breaker, not a
+  Valkey-backed one (see ``api/providers/upstream.py`` for why that
+  tradeoff is fine here).
+
 Health check
 ------------
 
 ``GET /v1/health``
 
-Returns the upstream status, for example:
+Returns overall status plus a per-instance breakdown (useful for alerting
+on a specific down instance rather than just "something's wrong"):
 
 .. code-block:: json
 
    {
-     "upstream": "ok"
+     "upstream": "ok",
+     "upstreams": [
+       {"url": "http://upstream-1:8081", "status": "ok"},
+       {"url": "http://upstream-2:8081", "status": "down"}
+     ]
    }
+
+``upstream`` is ``"ok"`` if at least one configured instance can serve a
+request - that mirrors what ``/v1/search``'s own failover will actually do.
 
 Dashboard
 =========
@@ -388,6 +430,12 @@ Configuration
 =============
 
 - ``UPSTREAM_SEARCH_URL``: base URL of the upstream search engine instance
+- ``UPSTREAM_SEARCH_FALLBACK_URLS``: comma-separated extra upstream
+  instances to fail over to (empty by default - no failover with one
+  instance). See *Reliability*.
+- ``UPSTREAM_FAILURE_THRESHOLD`` / ``UPSTREAM_COOLDOWN_SECONDS``:
+  consecutive failures before an upstream instance is deprioritized, and
+  how long for (default ``3`` / ``30``)
 - ``DATABASE_URL``: SQLAlchemy async URL for users/API keys (default:
   local SQLite file; use Postgres in production — e.g. AWS RDS)
 - ``VALKEY_URL``: Valkey/Redis connection for rate limiting + the search
@@ -409,6 +457,15 @@ Configuration
   (default ``20``)
 - ``DEEPSEEK_API_KEY`` / ``DEEPSEEK_BASE_URL`` / ``DEEPSEEK_MODEL`` /
   ``DEEPSEEK_TIMEOUT_SECONDS``: DeepSeek settings for ``include_answer``
+  and ``semantic_rerank``
+- ``SEMANTIC_RERANK_TOP_K``: how many top results ``semantic_rerank=true``
+  re-judges (default ``10``)
+- ``TAVILY_API_KEY`` / ``TAVILY_BASE_URL`` / ``TAVILY_TIMEOUT_SECONDS``:
+  Tavily settings for the search fallback (unset ``TAVILY_API_KEY`` means
+  it never triggers)
+- ``TAVILY_FALLBACK_SCORE_THRESHOLD``: final_score below which the top
+  result is considered weak enough to trigger the Tavily fallback
+  (default ``0.35``)
 - ``DEFAULT_CRAWL_MAX_PAGES`` / ``MAX_CRAWL_MAX_PAGES``: default and cap for
   ``max_pages`` on ``/v1/crawl`` and ``/v1/map`` (default ``20`` / ``200``)
 - ``DEFAULT_CRAWL_MAX_DEPTH`` / ``MAX_CRAWL_MAX_DEPTH``: default and cap for
