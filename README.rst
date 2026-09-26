@@ -111,6 +111,8 @@ The service currently exposes these endpoints:
 - ``GET /v1/search`` (requires an API key)
 - ``GET /v1/extract`` (requires an API key)
 - ``POST /v1/extract/batch`` (requires an API key)
+- ``POST /v1/crawl`` / ``GET /v1/crawl/{id}`` (requires an API key)
+- ``POST /v1/map`` / ``GET /v1/map/{id}`` (requires an API key)
 
 Search endpoint
 ---------------
@@ -276,6 +278,53 @@ Results come back in the same order as the request's ``urls``. One URL
 failing (unreachable, no content, etc.) never fails the batch — it just
 gets a non-null ``error`` on that entry.
 
+Crawl and map
+=============
+
+``POST /v1/crawl`` / ``POST /v1/map`` (requires an API key)
+
+.. code-block:: json
+
+   {
+     "url": "https://example.com",
+     "max_pages": 20,
+     "max_depth": 2
+   }
+
+Both start a bounded, same-domain crawl from ``url`` and return a job
+immediately in ``queued`` status rather than blocking on the crawl itself.
+``/v1/crawl`` also extracts each page's main content as Markdown;
+``/v1/map`` skips extraction and only reports which URLs were discovered.
+``max_pages`` (default ``20``, range ``1..200``) and ``max_depth`` (default
+``2``, range ``0..5``) bound the job; ``url`` goes through the same
+SSRF/private-network check as ``/v1/extract``.
+
+Poll ``GET /v1/crawl/{id}`` or ``GET /v1/map/{id}`` for status/results:
+
+.. code-block:: json
+
+   {
+     "id": "...",
+     "mode": "crawl",
+     "start_url": "https://example.com",
+     "max_pages": 20,
+     "max_depth": 2,
+     "status": "done",
+     "error": null,
+     "results": [
+       {"url": "https://example.com", "title": "Example", "content": "# Example\n..."}
+     ],
+     "created_at": "2025-01-02T12:00:00Z",
+     "finished_at": "2025-01-02T12:00:04Z"
+   }
+
+``status`` is one of ``queued`` / ``running`` / ``done`` / ``failed``.
+Hitting the time or page cap still finishes as ``done`` with whatever
+pages were fetched — that's an expected bound, not a failure. Jobs run as
+an in-process, timeout-bounded background task (no separate worker process
+to deploy or monitor), using `Scrapling <https://github.com/D4Vinci/Scrapling>`_
+for fetching, link discovery, and robots.txt compliance.
+
 Health check
 ------------
 
@@ -336,6 +385,15 @@ Configuration
   (default ``20``)
 - ``DEEPSEEK_API_KEY`` / ``DEEPSEEK_BASE_URL`` / ``DEEPSEEK_MODEL`` /
   ``DEEPSEEK_TIMEOUT_SECONDS``: DeepSeek settings for ``include_answer``
+- ``DEFAULT_CRAWL_MAX_PAGES`` / ``MAX_CRAWL_MAX_PAGES``: default and cap for
+  ``max_pages`` on ``/v1/crawl`` and ``/v1/map`` (default ``20`` / ``200``)
+- ``DEFAULT_CRAWL_MAX_DEPTH`` / ``MAX_CRAWL_MAX_DEPTH``: default and cap for
+  ``max_depth`` (default ``2`` / ``5``)
+- ``CRAWL_JOB_TIMEOUT_SECONDS``: wall-clock cap per crawl/map job (default
+  ``120``) — a job that hits this still finishes ``done`` with whatever
+  pages it got
+- ``CRAWL_CONCURRENCY``: concurrent in-flight requests per crawl/map job
+  (default ``5``)
 
 Deploying on AWS
 =================
