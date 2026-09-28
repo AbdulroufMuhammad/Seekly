@@ -518,8 +518,7 @@ container. There's no separate auth wrapper in front of the gateway: the
 app's own auth is the only gate — JWT sessions for the dashboard, per-key
 auth for ``/v1/search``/``/v1/extract``/``/v1/crawl``/``/v1/map`` — and
 ``/v1/auth/signup`` plus the dashboard are intentionally public, so
-self-service signup works out of the box. See ``DEPLOY.md`` for the
-Fly.io-specific steps.
+self-service signup works out of the box.
 
 Deploying on AWS
 -----------------
