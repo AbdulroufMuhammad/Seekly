@@ -10,7 +10,7 @@ from api import valkeydb
 from api.config import CORS_ALLOWED_ORIGINS, UPSTREAM_SEARCH_URL, UPSTREAM_SEARCH_URLS
 from api.db import init_models
 from api.providers.upstream import UpstreamSearchProvider
-from api.routes import auth, crawl, extract, health, keys, search
+from api.routes import auth, crawl, extract, guide, health, keys, search
 
 # The dashboard (dashboard/) is a static, no-build-step frontend for
 # self-service signup/login/API-key management - see dashboard/README.md.
@@ -48,6 +48,7 @@ app.include_router(extract.router)
 app.include_router(auth.router)
 app.include_router(keys.router)
 app.include_router(crawl.router)
+app.include_router(guide.router)
 
 # Mounted last and at "/" so it never shadows the API routes above -
 # Starlette matches routes in registration order, and the routers'
